@@ -1,6 +1,6 @@
 # Whut?
 
-Delete your old Slack messages and files from a workspace.
+Delete old messages and files from your Slack workspace.
 
 # Setup Slack
 
