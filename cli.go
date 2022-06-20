@@ -39,9 +39,9 @@ func main() {
 	// Limited cleanup to messages and files owned by a specific Slack user.
 	user := pflag.String("user", "", "Limit cleanup to a specific Slack user (username without the `@` sign)")
 
-	// Filter public, private, multiparty and DM channels using this pattern.
+	// Filter public, private, multiparty and IM channels using this pattern.
 	// This limits cleanup to channels that match the filter.
-	filter := pflag.String("filter", "", "Filter channels (public, private, multi-party and DM) using this pattern, e.g. 'foo,bar' becomes regexp /(foo|bar)/i")
+	filter := pflag.String("filter", "", "Filter channels (public, private, multi-party and IM) using this pattern, e.g. 'foo,bar' becomes regexp /(foo|bar)/i")
 
 	// Delete messages and files before this date.
 	before := pflag.String("before", "", "Delete messages and files before this date (REQUIRED, format: YYYYMMDD-HHII)")
@@ -249,15 +249,18 @@ func (s *SlackClean) Channels(filter string, users map[string]string) (channels 
 				// Include all MpIM channels if there's no filter.
 				if re == nil || re.MatchString(c.Name) {
 					found++
-					fmt.Printf("%04d. Found multiparty DM channel ID %s (name: %s)\n", found, c.ID, c.Name)
+					fmt.Printf("%04d. Found multiparty IM channel ID %s (name: %s)\n", found, c.ID, c.Name)
 					channels = append(channels, c)
 				}
 			} else if c.IsIM {
 				username := users[c.User]
-				// Include all DM channels if there's no filter.
+				// Include all IM channels if there's no filter.
 				if re == nil || re.MatchString(username) {
 					found++
-					fmt.Printf("%04d. Found DM channel ID %s (name: %s)\n", found, c.ID, username)
+					fmt.Printf("%04d. Found IM channel ID %s (name: %s)\n", found, c.ID, username)
+					if c.Name == "" {
+						c.Name = username
+					}
 					channels = append(channels, c)
 				}
 			} else if c.IsPrivate {
@@ -411,7 +414,12 @@ func (s *SlackClean) DeleteMessages(messages []slack.Message) {
 		for {
 			ch, ts, err := s.c.DeleteMessage(m.Channel, m.Timestamp)
 			if err != nil {
+				if err.Error() == "cant_delete_message" {
+					fmt.Printf("%04d. [ERROR] Failed to delete message ID %s in channel ID %s\n", i+1, m.Timestamp, m.Channel)
+					break
+				}
 				if err.Error() == "message_not_found" {
+					fmt.Printf("%04d. [ERROR] Could not find message ID %s in channel ID %s\n", i+1, m.Timestamp, m.Channel)
 					break
 				}
 				s.ratelimitOrPanic(err)
@@ -431,7 +439,12 @@ func (s *SlackClean) DeleteFiles(files []slack.File) {
 		for {
 			err := s.c.DeleteFile(f.ID)
 			if err != nil {
+				if err.Error() == "cant_delete_file" {
+					fmt.Printf("%04d. [ERROR] Failed to delete file named %s (created: %s)\n", i+1, f.Name, prettyDate(f.Created.Time()))
+					break
+				}
 				if err.Error() == "file_not_found" {
+					fmt.Printf("%04d. [ERROR] Could not find file named %s (created: %s)\n", i+1, f.Name, prettyDate(f.Created.Time()))
 					break
 				}
 				s.ratelimitOrPanic(err)
